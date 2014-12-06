@@ -1,6 +1,23 @@
 package koda;
 
+import java.awt.BorderLayout;
+import java.awt.GridLayout;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
+import java.awt.event.WindowListener;
+import java.io.IOException;
 import java.util.Date;
+
+import javax.net.ssl.SSLEngineResult.Status;
+import javax.swing.BorderFactory;
+import javax.swing.DefaultListModel;
+import javax.swing.JButton;
+import javax.swing.JFrame;
+import javax.swing.JList;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 
 import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.Listener;
@@ -9,22 +26,91 @@ import com.esotericsoftware.kryonet.Server;
 public class ServerProgram extends Listener {
 
 	static Server server;
-	static int udpPort = 27960;
 	static int tcpPort = 27960;
+	static int udpPort = 27961;
 	
+	static JFrame frame = new JFrame("Server");
+	static JPanel panel1 = new JPanel();
+	static JPanel panel2 = new JPanel();
+	static JPanel panel3 = new JPanel();
+	static JPanel master_panel = new JPanel();
+	static JButton button_disconnect = new JButton("Disconnect");
+	static DefaultListModel<String> list_model = new DefaultListModel<String>();
+	static JList<String> client_list = new JList<String>(list_model);
+
 	public static void main(String[] args) throws Exception {
 		System.out.println("Creating server...");
 		server = new Server();
-		server.getKryo().register(PacketMessage.class);
+		registerPackets();
 		server.bind(tcpPort, udpPort);
 		server.start();
 		server.addListener(new ServerProgram());
 		System.out.println("Server operational.");
+		
+		
+		
+		button_disconnect.addActionListener(new ActionListener() {
+
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				int index = client_list.getSelectedIndex();
+				
+				if (index != -1) {
+					int id = getClientIdFromModel(list_model.get(index));
+					StatusMessage pkt = new StatusMessage();
+					pkt.status = StatusMessage.KICKED;
+					server.sendToTCP(id, pkt);
+				}
+			}
+		});
+		
+		panel1.setLayout(new GridLayout(1, 1, 1, 1));
+		panel1.add(button_disconnect);
+		
+		panel2.setLayout(new BorderLayout(1, 1));
+		panel2.add(panel1, BorderLayout.NORTH);
+		panel2.add(new JScrollPane(client_list), BorderLayout.CENTER);
+		
+		master_panel.setLayout(new GridLayout(1, 1, 1, 1));
+		master_panel.add(panel2);
+		master_panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+		
+		frame.setContentPane(master_panel);
+		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		frame.addWindowListener(new WindowAdapter() {
+			
+			@Override
+			public void windowClosing(WindowEvent e) {
+				StatusMessage pkt = new StatusMessage();
+				pkt.status = StatusMessage.SERVER_SHUTTING_DOWN;
+				server.sendToAllTCP(pkt);
+				server.stop();
+			}
+		});
+		
+		frame.pack();
+		frame.setSize(350, 400);
+		frame.setLocationRelativeTo(null);
+		frame.setResizable(false);
+		frame.setVisible(true);
+	}
+	
+	public static void registerPackets() {
+		server.getKryo().register(PacketMessage.class);
+		server.getKryo().register(ChatMessage.class);
+		server.getKryo().register(StatusMessage.class);
+	}
+	
+	private static int getClientIdFromModel(String model) {
+		String s = model;
+		s = s.substring(s.indexOf(" ") + 1, s.indexOf("-") - 1);
+		return Integer.parseInt(s);
 	}
 	
 	@Override
 	public void connected(Connection c) {
-		System.out.println("Received connection from " + c.getRemoteAddressTCP().getHostString());
+		//System.out.println("Received connection from " + c.getRemoteAddressTCP().getHostString());
+		list_model.addElement("ID: " + c.getID() + " - " + c.getRemoteAddressTCP().getHostString() + " - " + c.getRemoteAddressTCP().getAddress().getHostName());
 		PacketMessage packetMessage = new PacketMessage();
 		packetMessage.message = "Hello, friend! Today is: " + new Date().toString();
 		c.sendTCP(packetMessage);
@@ -32,11 +118,23 @@ public class ServerProgram extends Listener {
 	
 	@Override
 	public void received(Connection c, Object p) {
-		
+		if (p instanceof ChatMessage) {
+			ChatMessage pkt = (ChatMessage) p;
+			c.sendTCP(pkt);
+		}
 	}
 	
 	@Override
 	public void disconnected(Connection c) {
-		System.out.println("A client disconnected");
+		//System.out.println("A client disconnected");
+		for (int i = 0; i < list_model.size(); i++) {
+			String s = list_model.get(i);
+			s = s.substring(s.indexOf(" ") + 1, s.indexOf("-") - 1);
+			int id = Integer.parseInt(s);
+			if (id == c.getID()) {
+				list_model.remove(i);
+				break;
+			}
+		}
 	}
 }
