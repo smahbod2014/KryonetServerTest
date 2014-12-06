@@ -6,11 +6,7 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.awt.event.WindowListener;
-import java.io.IOException;
-import java.util.Date;
 
-import javax.net.ssl.SSLEngineResult.Status;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
@@ -29,6 +25,7 @@ public class ServerProgram extends Listener {
 	static int tcpPort = 27960;
 	static int udpPort = 27961;
 	
+	static UserDatabase udb;
 	static JFrame frame = new JFrame("Server");
 	static JPanel panel1 = new JPanel();
 	static JPanel panel2 = new JPanel();
@@ -39,6 +36,7 @@ public class ServerProgram extends Listener {
 	static JList<String> client_list = new JList<String>(list_model);
 
 	public static void main(String[] args) throws Exception {
+		
 		System.out.println("Creating server...");
 		server = new Server();
 		registerPackets();
@@ -47,7 +45,7 @@ public class ServerProgram extends Listener {
 		server.addListener(new ServerProgram());
 		System.out.println("Server operational.");
 		
-		
+		udb = UserDatabase.read();
 		
 		button_disconnect.addActionListener(new ActionListener() {
 
@@ -60,6 +58,7 @@ public class ServerProgram extends Listener {
 					StatusMessage pkt = new StatusMessage();
 					pkt.status = StatusMessage.KICKED;
 					server.sendToTCP(id, pkt);
+					//Connection[] connections = server.getConnections()
 				}
 			}
 		});
@@ -81,6 +80,8 @@ public class ServerProgram extends Listener {
 			
 			@Override
 			public void windowClosing(WindowEvent e) {
+				udb.write();
+				
 				StatusMessage pkt = new StatusMessage();
 				pkt.status = StatusMessage.SERVER_SHUTTING_DOWN;
 				server.sendToAllTCP(pkt);
@@ -96,9 +97,10 @@ public class ServerProgram extends Listener {
 	}
 	
 	public static void registerPackets() {
-		server.getKryo().register(PacketMessage.class);
+		server.getKryo().register(LoginResponse.class);
 		server.getKryo().register(ChatMessage.class);
 		server.getKryo().register(StatusMessage.class);
+		server.getKryo().register(LoginMessage.class);
 	}
 	
 	private static int getClientIdFromModel(String model) {
@@ -111,9 +113,9 @@ public class ServerProgram extends Listener {
 	public void connected(Connection c) {
 		//System.out.println("Received connection from " + c.getRemoteAddressTCP().getHostString());
 		list_model.addElement("ID: " + c.getID() + " - " + c.getRemoteAddressTCP().getHostString() + " - " + c.getRemoteAddressTCP().getAddress().getHostName());
-		PacketMessage packetMessage = new PacketMessage();
+		/*PacketMessage packetMessage = new PacketMessage();
 		packetMessage.message = "Hello, friend! Today is: " + new Date().toString();
-		c.sendTCP(packetMessage);
+		c.sendTCP(packetMessage);*/
 	}
 	
 	@Override
@@ -121,6 +123,24 @@ public class ServerProgram extends Listener {
 		if (p instanceof ChatMessage) {
 			ChatMessage pkt = (ChatMessage) p;
 			c.sendTCP(pkt);
+		} else if (p instanceof LoginMessage) {
+			LoginMessage pkt = (LoginMessage) p;
+			LoginResponse response = new LoginResponse();
+			response.login_status = udb.verifyUser(pkt.username, pkt.password);
+			
+			switch (response.login_status) {
+			case LoginResponse.LOGIN_SUCCESSFUL:
+				response.message = "Welcome back, " + pkt.username + "!";
+				break;
+			case LoginResponse.LOGIN_NEW_USER:
+				response.message = "Welcome, new user " + pkt.username + "!";
+				break;
+			case LoginResponse.LOGIN_BAD_PASSWORD:
+				response.message = "Incorrect password! Please try again.";
+				break;
+			}
+			
+			c.sendTCP(response);
 		}
 	}
 	
@@ -128,9 +148,7 @@ public class ServerProgram extends Listener {
 	public void disconnected(Connection c) {
 		//System.out.println("A client disconnected");
 		for (int i = 0; i < list_model.size(); i++) {
-			String s = list_model.get(i);
-			s = s.substring(s.indexOf(" ") + 1, s.indexOf("-") - 1);
-			int id = Integer.parseInt(s);
+			int id = getClientIdFromModel(list_model.get(i));
 			if (id == c.getID()) {
 				list_model.remove(i);
 				break;
