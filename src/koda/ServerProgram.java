@@ -109,10 +109,22 @@ public class ServerProgram extends Listener {
 		return Integer.parseInt(s);
 	}
 	
+	private static void updateModel(int id, String username) {
+		for (int i = 0; i < list_model.size(); i++) {
+			String s = list_model.get(i);
+			if (id == getClientIdFromModel(s)) {
+				String prefix = s.substring(0, s.indexOf("-") + 2);
+				prefix += username + " - ";
+				prefix += s.substring(s.indexOf("-") + 2);
+				list_model.set(i, prefix);
+			}
+		}
+	}
+	
 	@Override
 	public void connected(Connection c) {
 		//System.out.println("Received connection from " + c.getRemoteAddressTCP().getHostString());
-		list_model.addElement("ID: " + c.getID() + " - " + c.getRemoteAddressTCP().getHostString() + " - " + c.getRemoteAddressTCP().getAddress().getHostName());
+		list_model.addElement("ID: " + c.getID() + " - " + c.getRemoteAddressTCP().getHostString());
 		/*PacketMessage packetMessage = new PacketMessage();
 		packetMessage.message = "Hello, friend! Today is: " + new Date().toString();
 		c.sendTCP(packetMessage);*/
@@ -128,17 +140,23 @@ public class ServerProgram extends Listener {
 			LoginResponse response = new LoginResponse();
 			response.login_status = udb.verifyUser(pkt.username, pkt.password);
 			
+			boolean valid = false;
 			switch (response.login_status) {
 			case LoginResponse.LOGIN_SUCCESSFUL:
 				response.message = "Welcome back, " + pkt.username + "!";
+				valid = true;
 				break;
 			case LoginResponse.LOGIN_NEW_USER:
 				response.message = "Welcome, new user " + pkt.username + "!";
+				valid = true;
 				break;
 			case LoginResponse.LOGIN_BAD_PASSWORD:
 				response.message = "Incorrect password! Please try again.";
 				break;
 			}
+			
+			if (valid)
+				updateModel(c.getID(), pkt.username);
 			
 			c.sendTCP(response);
 		}
