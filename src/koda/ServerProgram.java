@@ -34,6 +34,8 @@ public class ServerProgram extends Listener {
 	static JButton button_disconnect = new JButton("Disconnect");
 	static DefaultListModel<String> list_model = new DefaultListModel<String>();
 	static JList<String> client_list = new JList<String>(list_model);
+	
+	static int num_users_online = 0;
 
 	public static void main(String[] args) throws Exception {
 		
@@ -58,7 +60,11 @@ public class ServerProgram extends Listener {
 					StatusMessage pkt = new StatusMessage();
 					pkt.status = StatusMessage.KICKED;
 					server.sendToTCP(id, pkt);
-					//Connection[] connections = server.getConnections()
+					
+					AnnouncementMessage msg = new AnnouncementMessage();
+					msg.announcement_type = AnnouncementMessage.ANNOUNCEMENT_NOTIFICATION;
+					msg.message = getClientNameFromModel(list_model.get(index)) + " has been kicked!\n";
+					server.sendToAllExceptTCP(id, msg);
 				}
 			}
 		});
@@ -101,12 +107,19 @@ public class ServerProgram extends Listener {
 		server.getKryo().register(ChatMessage.class);
 		server.getKryo().register(StatusMessage.class);
 		server.getKryo().register(LoginMessage.class);
+		server.getKryo().register(AnnouncementMessage.class);
 	}
 	
 	private static int getClientIdFromModel(String model) {
 		String s = model;
 		s = s.substring(s.indexOf(" ") + 1, s.indexOf("-") - 1);
 		return Integer.parseInt(s);
+	}
+	
+	private static String getClientNameFromModel(String model) {
+		String s = model;
+		s = s.substring(s.indexOf("-") + 2, s.indexOf(" ", s.indexOf("-") + 2));
+		return s;
 	}
 	
 	private static void updateModel(int id, String username) {
@@ -123,18 +136,15 @@ public class ServerProgram extends Listener {
 	
 	@Override
 	public void connected(Connection c) {
-		//System.out.println("Received connection from " + c.getRemoteAddressTCP().getHostString());
 		list_model.addElement("ID: " + c.getID() + " - " + c.getRemoteAddressTCP().getHostString());
-		/*PacketMessage packetMessage = new PacketMessage();
-		packetMessage.message = "Hello, friend! Today is: " + new Date().toString();
-		c.sendTCP(packetMessage);*/
+		num_users_online++;
 	}
 	
 	@Override
 	public void received(Connection c, Object p) {
 		if (p instanceof ChatMessage) {
 			ChatMessage pkt = (ChatMessage) p;
-			c.sendTCP(pkt);
+			server.sendToAllExceptTCP(c.getID(), pkt);
 		} else if (p instanceof LoginMessage) {
 			LoginMessage pkt = (LoginMessage) p;
 			LoginResponse response = new LoginResponse();
@@ -155,8 +165,18 @@ public class ServerProgram extends Listener {
 				break;
 			}
 			
-			if (valid)
+			if (valid) {
 				updateModel(c.getID(), pkt.username);
+				AnnouncementMessage msg = new AnnouncementMessage();
+				msg.announcement_type = AnnouncementMessage.ANNOUNCEMENT_REGULAR;
+				msg.message = "Welcome to the chat server. There are currently " + num_users_online + " user(s) in the room.\n";
+				c.sendTCP(msg);
+				
+				msg = new AnnouncementMessage();
+				msg.announcement_type = AnnouncementMessage.ANNOUNCEMENT_REGULAR;
+				msg.message = pkt.username + " has just joined the server!\n";
+				server.sendToAllExceptTCP(c.getID(), msg);
+			}
 			
 			c.sendTCP(response);
 		}
@@ -169,6 +189,7 @@ public class ServerProgram extends Listener {
 			int id = getClientIdFromModel(list_model.get(i));
 			if (id == c.getID()) {
 				list_model.remove(i);
+				num_users_online--;
 				break;
 			}
 		}
