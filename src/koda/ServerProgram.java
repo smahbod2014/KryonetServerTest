@@ -6,6 +6,8 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.util.ArrayList;
+import java.util.List;
 
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
@@ -34,6 +36,7 @@ public class ServerProgram extends Listener {
 	static JButton button_disconnect = new JButton("Disconnect");
 	static DefaultListModel<String> list_model = new DefaultListModel<String>();
 	static JList<String> client_list = new JList<String>(list_model);
+	static List<String> online_users = new ArrayList<String>();
 	
 	static int num_users_online = 0;
 
@@ -167,6 +170,7 @@ public class ServerProgram extends Listener {
 			
 			if (valid) {
 				updateModel(c.getID(), pkt.username);
+				online_users.add(pkt.username);
 				AnnouncementMessage msg = new AnnouncementMessage();
 				msg.announcement_type = AnnouncementMessage.ANNOUNCEMENT_REGULAR;
 				msg.message = "Welcome to the chat server. There are currently " + num_users_online + " user(s) in the room.\n";
@@ -188,7 +192,19 @@ public class ServerProgram extends Listener {
 		for (int i = 0; i < list_model.size(); i++) {
 			int id = getClientIdFromModel(list_model.get(i));
 			if (id == c.getID()) {
-				list_model.remove(i);
+				String model = list_model.remove(i);
+				for (int j = 0; j < online_users.size(); j++) {
+					String name = online_users.get(j);
+					if (name.equals(getClientNameFromModel(model))) {
+						AnnouncementMessage msg = new AnnouncementMessage();
+						msg.announcement_type = AnnouncementMessage.ANNOUNCEMENT_REGULAR;
+						msg.message = name + " has left the server.";
+						server.sendToAllExceptTCP(c.getID(), msg);
+						online_users.remove(j);
+						break;
+					}
+				}
+				
 				num_users_online--;
 				break;
 			}
